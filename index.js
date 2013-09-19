@@ -42,6 +42,14 @@ ChatStream.prototype.afterJoin = function() {
   }.bind(this));
 }
 
+ChatStream.prototype.end = function() {
+  var self = this;
+  var args = arguments;
+  this.client.disconnect(function() {
+    Duplex.prototype.end.apply(self, args);
+  });
+}
+
 // Duplex methods
 
 ChatStream.prototype._read = function() {}
