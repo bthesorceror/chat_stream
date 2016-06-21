@@ -1,18 +1,24 @@
-var IrcClient = require('irc').Client;
-var Duplex    = require('stream').Duplex
+'use strict';
+const irc    = require('slate-irc');
+const net    = require('net');
+const Duplex = require('stream').Duplex
 
 function ChatStream(channel, options) {
   Duplex.apply(this);
   options = options || {};
-  this.channel = channel;
-  this.server = options['server'] || 'irc.freenode.net';
-  this.username = options['username'] || this.generateUsername();
-  this.password = options['password'];
-  this.client = new IrcClient(this.server, this.username);
-  this.client.on('registered', this.onConnect.bind(this));
-  this.client.on('error', function(err) {
-    this.emit('error', err);
-  }.bind(this));
+
+  this.channel  = channel;
+  this.server   = options.server || 'irc.freenode.net';
+  this.port     = options.port || 6667;
+  this.username = options.username || this.generateUsername();
+  this.password = options.password;
+  this.socket   = net.connect({ host: this.server, port: this.port});
+  this.client   = irc(this.socket);
+  this.client.nick(this.username);
+  this.client.user('username', this.username);
+
+  this.socket.on('error', this.emit.bind(this, 'error'));
+  this.onConnect();
 }
 
 (require('util')).inherits(ChatStream, Duplex);
@@ -23,31 +29,32 @@ ChatStream.prototype.generateUsername = function() {
 
 ChatStream.prototype.onConnect = function() {
   if (this.password)
-    this.client.say('NickServ', 'IDENTIFY ' + this.password);
-  process.nextTick(function() {
+    this.client.send('NickServ', `IDENTIFY ${this.password}`);
+
+  process.nextTick(() => {
     this.emit('connected');
     this.join();
-  }.bind(this));
+  });
 }
 
 ChatStream.prototype.join = function() {
-  this.client.join('#' + this.channel, this.afterJoin.bind(this));
+  this.client.once('join', this.afterJoin.bind(this));
+  this.client.join(`#${this.channel}`);
 }
 
 ChatStream.prototype.afterJoin = function() {
   this.emit('ready');
-  this.client.on('message#' + this.channel, function(nick, message) {
-    if (this.username == nick) return;
-    this.push(message);
-  }.bind(this));
+  this.client.on('message', (event) => {
+    if (event.from === this.username)
+      return;
+
+    this.push(event.message);
+  });
 }
 
 ChatStream.prototype.end = function() {
-  var self = this;
-  var args = arguments;
-  this.client.disconnect(function() {
-    Duplex.prototype.end.apply(self, args);
-  });
+  this.client.quit();
+  Duplex.prototype.end.call(this, arguments);
 }
 
 // Duplex methods
@@ -55,7 +62,7 @@ ChatStream.prototype.end = function() {
 ChatStream.prototype._read = function() {}
 
 ChatStream.prototype._write = function(chunk, enc, next) {
-  this.client.say('#' + this.channel, chunk);
+  this.client.send('#' + this.channel, chunk);
   next();
 }
 

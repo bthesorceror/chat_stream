@@ -9,6 +9,6 @@
   "author": "Brandon Farmer",
   "license": "BSD",
   "dependencies": {
-    "irc": "~0.3.6"
+    "slate-irc": "^0.8.1"
   }
 }
